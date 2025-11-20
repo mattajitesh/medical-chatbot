@@ -1,40 +1,107 @@
-🏥 Healthcare Appointment Chatbot (Flask + SQLite)
+🤖 MedBot – Healthcare Assistant Chatbot
+
+A conversational healthcare assistant built with Flask, SQLite, and a hybrid rule-based + LLM workflow.
+MedBot helps users describe symptoms, book appointments, reschedule or cancel them, and get quick health advice.
 
 <img width="2145" height="1183" alt="image" src="https://github.com/user-attachments/assets/b14bc16e-bff6-48b4-8b6e-3a07daf92ed1" />
 
+🌟 Features
+🩺 1. Symptom-Based Guidance
 
-A conversational AI-powered healthcare assistant built with Flask, SQLite, and a rule-based + LLM hybrid flow.
-It supports booking, rescheduling, and cancelling appointments while also answering basic health queries.
+Users can describe symptoms such as:
 
-🚀 Features
-✔ Appointment Management
+"I have a headache and fever"
 
-Book new appointments
 
-Reschedule existing appointments
+MedBot provides basic precautions and initial suggestions.
 
-Cancel booked appointments
+📅 2. Book an Appointment
 
-Choose doctors by speciality
+Start by typing:
 
-Slot selection (date & time)
+book appointment
 
-✔ Smart Interactions
 
-Handles greetings, restart, help, and emergency queries
+MedBot collects details step-by-step:
 
-Uses in-memory sessions to track user conversation flow
+1️⃣ Full Name
+2️⃣ Email ID
+3️⃣ Mobile Number
+4️⃣ Symptoms
+5️⃣ Doctor Recommendation (based on symptoms)
+6️⃣ Appointment Date (YYYY-MM-DD)
+7️⃣ Shift – Morning 🌅 / Evening 🌇
+8️⃣ Time Slot ⏰
 
-Detects and responds to general health-related questions via LLM
+✔ Confirms the appointment
+✔ Sends an email confirmation
 
-✔ Technology Stack
+🔁 3. Reschedule Appointment
+
+Start with:
+
+reschedule appointment
+
+
+Reschedule using either:
+
+Mobile Number
+
+Serial Number
+
+You can update:
+✔ Date
+✔ Shift
+✔ Time Slot
+
+❌ 4. Cancel Appointment
+
+Start with:
+
+cancel appointment
+
+
+Cancel using:
+
+Mobile Number
+
+Serial Number
+
+MedBot shows your appointment details before confirming cancellation.
+
+💬 5. General Health Advice
+
+Ask quick health FAQs such as:
+
+“What should I do for cold and cough?”
+
+“I feel weak and tired.”
+
+MedBot gives short, helpful advice (non-medical).
+
+⛑ Special Commands
+help     → Shows user guide
+restart  → Restarts session
+emergency → Advises immediate hospital visit
+
+
+⚠ Note: This bot is not a replacement for a medical professional.
+For emergencies, visit your nearest hospital immediately.
+
+🛠 Tech Stack
 
 Python Flask
 
-Flask-SQLAlchemy
+Flask-SQLAlchemy + SQLite
 
-SQLite (local database)
+dotenv
 
-dotenv for environment config
+Rule-based conversation engine
 
-Rule-based conversation engine + LLM fallback
+Optional LLM integration for health-query answers
+
+
+
+
+
+
