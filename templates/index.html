@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HealthBot - Healthcare Assistant Chatbot</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f0f4f8;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .chat-container {
+            max-width: 600px;
+            margin: 20px auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #007bff, #00c6ff);
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+
+        .chat-messages {
+            height: 600px;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message {
+            max-width: 80%;
+            margin-bottom: 15px;
+            padding: 12px 18px;
+            border-radius: 20px;
+            line-height: 1.4;
+            position: relative;
+            word-wrap: break-word;
+        }
+
+        .bot-message {
+            background: #e9f7ff;
+            color: #333;
+            align-self: flex-start;
+            border-bottom-left-radius: 5px;
+        }
+
+        .user-message {
+            background: #007bff;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 5px;
+        }
+
+        .chat-input {
+            display: flex;
+            padding: 15px;
+            border-top: 1px solid #ddd;
+            background: #f8f9fa;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 25px 0 0 25px;
+            outline: none;
+        }
+
+        .chat-input button {
+            padding: 12px 20px;
+            border: none;
+            background: #007bff;
+            color: white;
+            border-radius: 0 25px 25px 0;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .chat-input button:hover {
+            background: #0056b3;
+        }
+
+        .chat-input button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .doctor-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .doctor-item {
+            background: #f0f4f8;
+            margin: 5px 0;
+            padding: 10px;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+
+        .doctor-item:hover {
+            background: #d9efff;
+        }
+
+        .loading {
+            text-align: center;
+            color: #999;
+            font-style: italic;
+        }
+
+        /* Scrollbar styling */
+        .chat-messages::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="chat-container">
+        <div class="chat-header">HealthBot - Your Healthcare Assistant</div>
+        <div class="chat-messages" id="chat-messages">
+            <!-- Messages will be appended here -->
+        </div>
+        <div class="chat-input">
+            <input type="text" id="user-input" placeholder="Type your message..." autocomplete="off">
+            <button id="send-btn">Send</button>
+        </div>
+    </div>
+
+    <script>
+        const chatMessages = document.getElementById('chat-messages');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+
+        // Generate or retrieve user_id from localStorage
+        let userId = localStorage.getItem('healthbot_user_id');
+        if (!userId) {
+            userId = 'user_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('healthbot_user_id', userId);
+        }
+
+        // Function to add message to chat
+        function addMessage(text, isUser = false, doctors = null) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message');
+            messageDiv.classList.add(isUser ? 'user-message' : 'bot-message');
+
+            // Parse text for line breaks
+            const formattedText = text.replace(/\n/g, '<br>');
+            messageDiv.innerHTML = formattedText;
+
+            if (!isUser && doctors) {
+                const doctorList = document.createElement('ul');
+                doctorList.classList.add('doctor-list');
+                doctors.forEach(doctor => {
+                    const li = document.createElement('li');
+                    li.classList.add('doctor-item');
+                    li.textContent = `${doctor.number}. ${doctor.name} (${doctor.speciality})`;
+                    // Optional: Make clickable to auto-select, but since input is number, maybe not needed
+                    doctorList.appendChild(li);
+                });
+                messageDiv.appendChild(doctorList);
+            }
+
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Function to show loading indicator
+        function showLoading() {
+            const loadingDiv = document.createElement('div');
+            loadingDiv.classList.add('message', 'bot-message', 'loading');
+            loadingDiv.textContent = 'Typing...';
+            loadingDiv.id = 'loading';
+            chatMessages.appendChild(loadingDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            return loadingDiv;
+        }
+
+        // Function to remove loading
+        function removeLoading() {
+            const loading = document.getElementById('loading');
+            if (loading) loading.remove();
+        }
+
+        // Send message to server
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            addMessage(message, true);
+            userInput.value = '';
+            sendBtn.disabled = true;
+
+            const loading = showLoading();
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId, message })
+                });
+
+                if (!response.ok) throw new Error('Network error');
+
+                const data = await response.json();
+                removeLoading();
+                addMessage(data.response, false, data.doctors || null);
+            } catch (error) {
+                removeLoading();
+                addMessage('Sorry, something went wrong. Please try again.', false);
+            } finally {
+                sendBtn.disabled = false;
+                userInput.focus();
+            }
+        }
+
+        // Event listeners
+        sendBtn.addEventListener('click', sendMessage);
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !sendBtn.disabled) sendMessage();
+        });
+
+        // Initial greeting
+        //async function initChat() {
+          //  addMessage("Hello! This is your Medical Assistant.\n'An early checkup is better than a late cure.'\n I can help you with the following:\n - Type 'appointment' to book a new appointment\n - Type 'reschedule' to reschedule an existing appointment\n - Type 'cancel' to cancel an appointment\n - Type 'emergency' for urgent help\n - Type 'help' to see this message again\n - Type 'restart' to start over", false);
+        //}
+
+        async function initChat() {
+        try {
+            const response = await fetch('/get_help_text', {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            console.log('[Frontend] initChat response:', data);
+            if (data.help_text) {
+                addMessage(data.help_text, false);
+            } else {
+                addMessage("Hello! This is your Medical Assistant.\n'An early checkup is better than a late cure.'\n I can help you with the following:\n - Type 'appointment' to book a new appointment\n - Type 'reschedule' to reschedule an existing appointment\n - Type 'cancel' to cancel an appointment\n - Type 'emergency' for urgent help\n - Type 'help' to see this message again\n - Type 'restart' to start over", false);
+            }
+        } catch (error) {
+            console.error('[Frontend] initChat error:', error);
+            addMessage("Hello! This is your Medical Assistant.\n'An early checkup is better than a late cure.'\n I can help you with the following:\n - Type 'appointment' to book a new appointment\n - Type 'reschedule' to reschedule an existing appointment\n - Type 'cancel' to cancel an appointment\n - Type 'emergency' for urgent help\n - Type 'help' to see this message again\n - Type 'restart' to start over", false);
+        }
+    }
+
+        initChat();
+    </script>
+</body>
+
+</html>

@@ -4,10 +4,7 @@ from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from models import db, Doctor, Appointment
-from appUtils import (
-    validate_name, validate_email, validate_mobile, validate_date,
-    send_email, get_greeting_message, HELP_TEXT, get_llm_response, is_health_query
-)
+from appUtils import *
 from appointmentService import book_appointment, cancel_appointment, reschedule_appointment
 
 load_dotenv()
@@ -44,32 +41,53 @@ def chat():
     user_id = data.get("user_id", "default")
     user_message = data.get("message", "").strip()
 
-    booking_stages = ["name", "email", "mobile", "symptoms", "choose_doctor", "date", "time", "slot_choice", "confirmation"]
-    cancel_stages = ["awaiting_serial", "confirm_cancel"]
-    reschedule_stages = ["awaiting_serial", "confirm_reschedule", "date", "time", "slot_choice", "confirmation"]
+    # these stages for book, reschedule and cancel query done in the sequential flow if no fallback query
+    booking_stages = ["name", "email", "mobile", "speciality", "choose_doctor", "date", "time", "slot_choice", "confirmation"]
+    cancel_stages = ["choose_method","awaiting_mobile","awaiting_serial","choose_appointment","confirm_cancel"]
+    reschedule_stages = ["choose_method","awaiting_mobile","awaiting_serial","choose_appointment", "confirm_reschedule", "date", "time", "slot_choice", "confirmation"]
 
     # Log incoming message and session state
     app.logger.debug(f"[chat] User ID: {user_id}, Message: {user_message}, Session: {user_sessions.get(user_id)}")
 
     # Handle specific commands first
+    # initial hey-hi-hello prompts
     if user_message.lower() in ["hi", "hello", "hey"]:
         user_sessions.pop(user_id, None)
         return jsonify({"response": get_greeting_message() + "\n\nHow can I assist you?"})
+    # for help text
     elif user_message.lower() == "help":
         user_sessions.pop(user_id, None)
         return jsonify({"response": HELP_TEXT})
+    # to restart session
     elif user_message.lower() == "restart":
         user_sessions.pop(user_id, None)
         app.logger.debug(f"[chat] Session cleared for user {user_id} on restart")
         return jsonify({"response": get_greeting_message() + "\n\nHow can I assist you?"})
-    elif user_message.lower() in ["cancel", "cancel appointment"]:
-        user_sessions[user_id] = {"stage": "awaiting_serial", "flow": "cancel"}
-        app.logger.debug(f"[chat] Initiating cancel flow for user {user_id}, Session: {user_sessions[user_id]}")
-        return jsonify({"response": "Please provide the serial number of the appointment to cancel."})
-    elif user_message.lower() in ["reschedule", "reschedule appointment"]:
-        user_sessions[user_id] = {"stage": "awaiting_serial", "flow": "reschedule"}
-        app.logger.debug(f"[chat] Initiating reschedule flow for user {user_id}, Session: {user_sessions[user_id]}")
-        return jsonify({"response": "Please provide the serial number of the appointment to reschedule."})
+    # for cancel flow to cancel appointment
+    elif user_message.lower() in ["cancel", "cancel appointment","cancel an appointment","cancel the appointment"]:
+        user_sessions[user_id] = {"stage": "choose_method", "flow": "cancel"}
+        app.logger.debug(f"[chat] Initiating cancellation flow (choose_method) for user {user_id}")
+        return jsonify({
+            "response": (
+                "To cancel your appointment, please choose:\n\n"
+                "1 → To Enter Mobile Number\n"
+                "2 → To Enter Serial Number\n\n"
+                "Please response with 1 or 2 only."
+            )
+        })
+    # for reschedule flow to reschedule existing appointment
+    elif user_message.lower() in ["reschedule", "reschedule appointment","reschedule a appointment","reschedule an appointment"]:
+        user_sessions[user_id] = {"stage": "choose_method", "flow": "reschedule"}
+        app.logger.debug(f"[chat] Initiating reschedule flow (choose_method) for user {user_id}")
+        return jsonify({
+            "response": (
+                "To reschedule your appointment, please choose:\n\n"
+                "1 → To Enter Mobile Number\n"
+                "2 → To Enter Serial Number\n\n"
+                "Please response with 1 or 2 only."
+            )
+        })
+    # for emergency query
     elif user_message.lower() == "emergency":
         user_sessions.pop(user_id, None)
         return jsonify({
@@ -77,10 +95,12 @@ def chat():
                         "Please call your local emergency number 108/112 "
                         "or go to the nearest hospital immediately."
         })
+    # for book flow to book new appointment
     elif "appointment" in user_message.lower():
         user_sessions[user_id] = {"stage": "name", "flow": "book"}
         app.logger.debug(f"[chat] Initiating booking flow for user {user_id}, Session: {user_sessions[user_id]}")
         return jsonify({"response": "What is your name?"})
+    # for invoking GenAI 
     elif is_health_query(user_message):
         app.logger.debug(f"[chat] Health query detected for user {user_id}: {user_message}")
         response = get_llm_response(user_message)
@@ -105,56 +125,12 @@ def chat():
     if flow == "book" and stage in booking_stages:
         app.logger.debug(f"[chat] Routing to book_appointment for user {user_id}, stage: {stage}, Session: {session}")
         return book_appointment(user_id, user_message, user_sessions)
+    
 
     # Handle cancellation flow
     if flow == "cancel" and stage in cancel_stages:
         app.logger.debug(f"[chat] Routing to cancel_appointment for user {user_id}, stage: {stage}, Session: {session}")
-        if stage == "awaiting_serial":
-            serial = user_message.strip().lower()
-            if not serial:
-                return jsonify({"response": "Please send the serial number (e.g., a UUID like 123e4567-e89b-12d3-a456-426614174000)."})
-            appointment = Appointment.query.filter_by(serial_number=serial).first()
-            if not appointment:
-                user_sessions.pop(user_id, None)
-                app.logger.debug(f"[chat] No appointment found for serial {serial}, session cleared")
-                return jsonify({"response": f"No appointment found with serial number '{serial}'. Start again with 'cancel' or 'reschedule'."})
-            if appointment.status and appointment.status.lower() == "cancelled":
-                user_sessions.pop(user_id, None)
-                app.logger.debug(f"[chat] Appointment {serial} already cancelled, session cleared")
-                return jsonify({"response": f"Appointment {serial} is already cancelled."})
-
-            # Fetch doctor details for the appointment
-            doctor = Doctor.query.get(appointment.doctor_id)
-            if not doctor:
-                user_sessions.pop(user_id, None)
-                app.logger.debug(f"[chat] Doctor not found for ID {appointment.doctor_id}, session cleared")
-                return jsonify({"response": "❌ Doctor not found for this appointment. Please type 'restart'."})
-
-            details_msg = (
-                f"Found appointment {serial}:\n\n"
-                f"👤 Patient: {appointment.patient_name}\n"
-                f"📧 Email: {appointment.patient_email}\n"
-                f"📱 Mobile: {appointment.patient_mobile}\n"
-                f"👨‍⚕️ Doctor: {doctor.name}\n"
-                f"🏥 Speciality: {doctor.speciality}\n"
-                f"📅 Date: {appointment.appointment_time.date()}\n"
-                f"⏰ Time: {appointment.appointment_time.strftime('%I:%M %p')}\n\n"
-            )
-
-            details_msg += "Reply 'yes' to confirm cancellation or 'no' to abort."
-            user_sessions[user_id] = {"stage": "confirm_cancel", "serial_number": serial, "flow": "cancel"}
-            app.logger.debug(f"[chat] Moving to confirm_cancel stage for user {user_id}, serial: {serial}, Session: {user_sessions[user_id]}")
-            return jsonify({"response": details_msg})
-
-        if stage == "confirm_cancel":
-            if user_message.lower() in ["yes", "y"]:
-                app.logger.debug(f"[chat] Confirming cancellation for user {user_id}, Session: {session}")
-                return cancel_appointment(user_id, "", user_sessions)
-            if user_message.lower() in ["no", "n", "abort"]:
-                user_sessions.pop(user_id, None)
-                app.logger.debug(f"[chat] Cancellation aborted for user {user_id}, session cleared")
-                return jsonify({"response": "Cancellation aborted. Anything else I can help with?"})
-            return jsonify({"response": "Please reply 'yes' to confirm cancellation or 'no' to abort."})
+        return cancel_appointment(user_id, user_message, user_sessions)
 
     # Fallback for invalid session or flow
     app.logger.debug(f"[chat] Invalid session or flow for user {user_id}, stage: {stage}, flow: {flow}, Session: {session}")

@@ -1,4 +1,3 @@
-
 import re
 import random
 from datetime import datetime
@@ -26,9 +25,10 @@ def validate_date(date_str):
     except ValueError:
         return None
 
+#for sending the mail using the SendGrid API call
 def send_email(to_email, subject, body):
     message = Mail(
-        from_email="jiteshmatta2103@gmail.com",  # must be verified in SendGrid
+        from_email="<PROVIDE YOUR MAIL ID>",  # must be verified in SendGrid
         to_emails=to_email,
         subject=subject,
         plain_text_content=body
@@ -37,6 +37,7 @@ def send_email(to_email, subject, body):
     response = sg.send(message)
     print(f"✅ Email sent to {to_email}, Status: {response.status_code}")
 
+# greeting msgs
 def get_greeting_message():
     greetings = [
         "🌸 Welcome to HealthBot! 🌸\n“Good health is the greatest wealth.” 💙",
@@ -69,12 +70,12 @@ I’ll guide you step by step to collect your:
 
 🔁 Reschedule an Appointment
 Type “reschedule appointment” to begin.
-→ Provide your serial number, review details, and confirm updates.
+→ Provide either your mobile number or serial number, review details, and confirm updates.
 → You can modify the date, shift, and time slot easily.
 
 ❌ Cancel an Appointment
 Type “cancel appointment” to proceed.
-→ Provide your serial number, review details, and confirm cancellation.
+→ Provide either your mobile number or serial number to review details and confirm cancellation.
 
 💬 Get General Advice
 Ask simple health queries like:
@@ -83,15 +84,17 @@ Ask simple health queries like:
 → I’ll provide concise, helpful advice.
 
 💡 Type “help” anytime to see this guide again.
-🔄 Type “restart” to restart the current process.
+🔄 Type “restart” to restart session.
 ⚠️ Note: I’m not a replacement for a real doctor. For emergencies, please visit your nearest 🏥 hospital immediately.
 """
 
+# detecting keywords to trigger GenAI model
 def is_health_query(message):
     """Detect if the message is a health-related query."""
-    health_keywords = ["fever", "cough", "pain", "headache", "sore", "throat", "cold", "flu", "sick", "ill"]
-    return any(keyword in message.lower() for keyword in health_keywords)
+    important_keywords = ["need","medicine","have","think","feel","got","cut","fever", "cough", "pain", "headache", "sore", "throat", "cold", "flu", "sick", "ill","bleeding","blood","clot"]
+    return any(keyword in message.lower() for keyword in important_keywords)
 
+#rule based script when GenAI model fails this works fine for common
 def rule_based_health_response(message):
     """Fallback rule-based response for health queries."""
     message = message.lower()
@@ -99,11 +102,16 @@ def rule_based_health_response(message):
         return "Take rest and stay hydrated. Monitor your temperature. If symptoms worsen, consult a healthcare provider. You can book an appointment anytime. Just type 'Book appointment'."
     elif "cough" in message or "cold" in message:
         return "Rest, drink warm fluids, and avoid cold exposure. You can book an appointment anytime. Just type 'Book appointment'."
+    elif "bleeding" in message or "blood" in message or "clot" in message:
+        return "Go to medical emergency and need first aid as soon as possible and try to stop the blood. Take help of clean cloth"
     elif "pain" in message or "headache" in message:
         return "Rest and consider over-the-counter pain relief if needed. You can book an appointment anytime. Just type 'Book appointment'."
+    elif "a lot" in message or "immediate" in message:
+        return "Immediately go-to near-by hospital. Dial '112' to call immediate assistance or write 'emergency' for emergency assistance."
     else:
         return "Please rest and monitor your symptoms. You can book an appointment anytime. Just type 'Book appointment'."
 
+#here is the generative model 
 def get_llm_response(message):
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
@@ -112,11 +120,11 @@ def get_llm_response(message):
     try:
         completion = client.chat.completions.create(
             extra_body={},
-            model="deepseek/deepseek-chat-v3.1:free",
+            model="nvidia/nemotron-nano-9b-v2:free",
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a health assistant. Provide concise advice for health queries (max 50 words) must ends with  You can book an appointment anytime. Just type 'Book appointment'."
+                    "content": "You are a health assistant. Provide concise advice for health queries (in 2–3 sentences)"
                 },
                 {
                     "role": "user",
